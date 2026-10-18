@@ -1,0 +1,325 @@
+-- In a loaded game, open the console and run:
+--   run_script id_limit_test
+--
+-- Proves object ids can pass 65535, that scripts can still resolve them, and
+-- that 65534 and 65535 are still empty ids. Temporary bolts are deleted afterwards.
+-- Do not save while it runs. If a previous run stopped midway, load the save again first.
+
+local EMPTY = 65535
+local EMPTY_ALT = 65534
+local MAX_ID = 131071
+local STEP_CAP = 1024
+local YIELD_EVERY = 32
+
+local passed = 0
+local failed = 0
+
+local function say(fmt, ...)
+	printf("%s", "* id_limit_test: " .. string.format(fmt, ...))
+end
+
+local function check(ok, name)
+	if ok then
+		passed = passed + 1
+		say("ok: %s", name)
+	else
+		failed = failed + 1
+		say("FAILED: %s", name)
+	end
+end
+
+local function read_field(object, name)
+	if not object then return nil end
+	local value = object[name]
+	if type(value) == "function" then
+		return object[name](object)
+	end
+	return value
+end
+
+local function read_id(object)
+	return read_field(object, "id")
+end
+
+local function is_online(object)
+	local value = read_field(object, "online")
+	return value and true or false
+end
+
+local function pick_section()
+	local candidates = {"bolt", "bread", "bandage"}
+	if not ini_sys then return candidates[1] end
+	for i = 1, #candidates do
+		if ini_sys:section_exist(candidates[i]) then
+			return candidates[i]
+		end
+	end
+	return candidates[1]
+end
+
+local function keep_offline(object)
+	return pcall(function()
+		object:can_switch_online(false)
+		object:use_ai_locations(false)
+	end)
+end
+
+local function release_object(sim, object)
+	if not object then return end
+	if is_online(object) then
+		pcall(function() object:switch_offline() end)
+	end
+	if is_online(object) then
+		pcall(function() sim:release(object, true) end)
+		return
+	end
+	local id = read_id(object)
+	local current = id and sim:object(id) or nil
+	if current then
+		sim:release(current, true)
+	end
+end
+
+local function find_existing_wide_id(sim)
+	local found = nil
+	sim:iterate_objects(function(object)
+		local id = read_id(object)
+		if id and id > EMPTY then
+			found = id
+			return true
+		end
+		return false
+	end)
+	return found
+end
+
+local function spawn_offline(sim, section, pos, level_vertex, game_vertex)
+	local object = sim:create(section, pos, level_vertex, game_vertex)
+	if not object then return nil, false end
+	local ok = keep_offline(object)
+	return object, ok and true or false
+end
+
+-- Freeing an id stamps its block with the current time. The generator then
+-- moves to the next untouched block, so a few hundred bolts reach id 65536
+-- without filling 0..65533. A freed id coming back means no wider block is
+-- available: the old ceiling is still in place, and the bolt is deleted.
+local function allocate_wide_id(sim, section, pos, level_vertex, game_vertex)
+	local released = {}
+	local steps = 0
+	local last_id = nil
+	local peak = 0
+	local wide_id = nil
+
+	say("walking id blocks until one is above 65535")
+
+	while not wide_id and steps < STEP_CAP do
+		local object = spawn_offline(sim, section, pos, level_vertex, game_vertex)
+		if not object then
+			say("create returned nothing after %d spawned ids", steps)
+			break
+		end
+
+		steps = steps + 1
+		local id = read_id(object)
+		if id and id > peak then peak = id end
+
+		if not id then
+			release_object(sim, object)
+			say("spawned object has no id")
+			break
+		end
+
+		if id > EMPTY then
+			wide_id = id
+			break
+		end
+
+		if id == last_id or released[id] then
+			release_object(sim, object)
+			say("generator reused id %s before any id above 65535", tostring(id))
+			break
+		end
+
+		released[id] = true
+		last_id = id
+		release_object(sim, object)
+
+		if steps % YIELD_EVERY == 0 then
+			say("step %d, last id %s, peak %s", steps, tostring(id), tostring(peak))
+			coroutine.yield()
+		end
+	end
+
+	return wide_id, steps, peak
+end
+
+local function test_static(sim, actor)
+	-- object(65534/65535) logs "invalid id specified". Those lines are the sentinels working.
+	say("the following invalid-id lines are expected")
+	check(sim:valid_object_id(EMPTY) == false, "65535 is still the empty id")
+	check(sim:valid_object_id(EMPTY_ALT) == false, "65534 is still an empty id")
+	check(sim:object(EMPTY) == nil, "alife():object(65535) is empty")
+	check(sim:object(EMPTY_ALT) == nil, "alife():object(65534) is empty")
+	check(sim:valid_object_id(EMPTY + 1) == true, "65536 is not treated as the empty id")
+	check(sim:valid_object_id(MAX_ID) == true, "131071 is not treated as the empty id")
+
+	local server_actor = sim:actor()
+	check(server_actor ~= nil, "server actor exists")
+	if server_actor then
+		local actor_id = read_id(server_actor)
+		check(actor_id ~= nil and actor_id ~= EMPTY and actor_id ~= EMPTY_ALT, "actor id is a real id")
+		check(sim:object(actor_id) ~= nil, "actor id still resolves")
+		if alife_object then
+			check(alife_object(actor_id) ~= nil, "alife_object() still resolves a normal id")
+			check(alife_object(EMPTY) == nil, "alife_object(65535) is empty")
+			check(alife_object(EMPTY_ALT) == nil, "alife_object(65534) is empty")
+		end
+		if actor and get_object_by_id then
+			local client = get_object_by_id(actor:id())
+			check(client ~= nil and client:id() == actor:id(), "get_object_by_id() still resolves the actor")
+			check(get_object_by_id(EMPTY) == nil, "get_object_by_id(65535) is empty")
+			check(get_object_by_id(EMPTY_ALT) == nil, "get_object_by_id(65534) is empty")
+		end
+	end
+end
+
+local function test_lookup(sim, id, label, parentless)
+	local object = sim:object(id)
+	check(object ~= nil and read_id(object) == id, label .. " registry id is not truncated")
+	check(id > EMPTY and id <= MAX_ID, label .. " id is inside 65536..131071")
+	check(id % 65536 ~= id, label .. " id does not fit in 16 bits")
+	if parentless and object then
+		check(read_field(object, "parent_id") == EMPTY, label .. " parentless id is still 65535")
+	end
+	if alife_object then
+		local wrapped = alife_object(id)
+		check(wrapped ~= nil and read_id(wrapped) == id, label .. " alife_object() accepts ids above 65535")
+	else
+		say("alife_object is not defined, that lookup was skipped")
+	end
+end
+
+local function test_wrappers()
+	local expanded_get = rawget(_G, "__expanded_get_object_by_id")
+	local expanded_alife = rawget(_G, "__expanded_alife_object")
+	say("get_object_by_id wrapper %s", (expanded_get and get_object_by_id == expanded_get) and "installed" or "not installed")
+	say("alife_object wrapper %s", (expanded_alife and alife_object == expanded_alife) and "installed" or "not installed")
+end
+
+local function test_client(sim, id)
+	local object = sim:object(id)
+	if not object then
+		check(false, "spawned wide id is still registered")
+		return
+	end
+
+	check(level.object_by_id(id) == nil, "wide id stays offline until it is switched on")
+	local switched = pcall(function()
+		object:can_switch_online(true)
+		if not is_online(object) then
+			object:switch_online()
+		end
+	end)
+	if not switched then
+		check(false, "wide id could not be switched online")
+		release_object(sim, object)
+		return
+	end
+
+	-- switch_online only queues the spawn. The client object is created on a later frame.
+	local client = nil
+	for _ = 1, 8 do
+		coroutine.yield()
+		client = level.object_by_id(id)
+		if client then break end
+	end
+	check(client ~= nil, "level.object_by_id finds an id above 65535")
+	if client then
+		check(client:id() == id, "client id matches the server id")
+	end
+	if get_object_by_id then
+		local resolved = get_object_by_id(id)
+		check(resolved ~= nil and resolved:id() == id, "get_object_by_id accepts ids above 65535")
+	else
+		check(false, "get_object_by_id is missing")
+	end
+
+	release_object(sim, object)
+	if sim:object(id) then
+		coroutine.yield()
+		coroutine.yield()
+	end
+	check(sim:object(id) == nil, "spawned wide id is released")
+end
+
+function main()
+	passed = 0
+	failed = 0
+
+	local sim = alife()
+	if not sim then
+		say("load a game first")
+		return
+	end
+
+	local actor = db and db.actor or nil
+	local server_actor = sim:actor()
+	if not actor and not server_actor then
+		say("actor is not spawned yet")
+		return
+	end
+
+	local pos = actor and actor:position() or server_actor.position
+	local level_vertex = actor and actor:level_vertex_id() or server_actor.m_level_vertex_id
+	local game_vertex = actor and actor:game_vertex_id() or server_actor.m_game_vertex_id
+	local section = pick_section()
+
+	say("start. objects %s. do not save until this prints a final result", tostring(sim:object_count()))
+	if print_tip then
+		pcall(print_tip, "id limit test running. do not save")
+	end
+
+	test_static(sim, actor)
+
+	local existing = find_existing_wide_id(sim)
+	if existing then
+		say("save already has id %s", tostring(existing))
+		test_lookup(sim, existing, "existing", false)
+		local client = level.object_by_id(existing)
+		if client then
+			check(client:id() == existing, "existing client id is not truncated")
+			if get_object_by_id then
+				local resolved = get_object_by_id(existing)
+				check(resolved ~= nil and resolved:id() == existing, "get_object_by_id finds the existing wide id")
+			end
+		end
+	else
+		say("no id above 65535 is stored yet")
+	end
+
+	local wide_id, steps, peak = allocate_wide_id(sim, section, pos, level_vertex, game_vertex)
+	say("allocation finished in %d steps, peak id %s", steps, tostring(peak))
+
+	test_wrappers()
+
+	if wide_id then
+		say("allocated id %s", tostring(wide_id))
+		test_lookup(sim, wide_id, "allocated", true)
+		test_client(sim, wide_id)
+	else
+		check(false, "allocated an id above 65535")
+	end
+
+	say("%d passed, %d failed", passed, failed)
+	local summary
+	if failed == 0 and (wide_id or existing) then
+		summary = string.format("id limit test PASS (%d checks)", passed)
+	else
+		summary = string.format("id limit test FAIL (%d failed, %d passed)", failed, passed)
+	end
+	say(summary)
+	if print_tip then
+		pcall(print_tip, summary)
+	end
+end

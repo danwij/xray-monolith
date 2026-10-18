@@ -91,7 +91,7 @@ xrServer::~xrServer()
 CSE_Abstract* xrServer::ID_to_entity(ALife::_OBJECT_ID ID)
 {
 	// #pragma todo("??? to all : ID_to_entity - must be replaced to 'game->entity_from_eid()'")	
-	if (ALife::invalid_object_id == ID) return 0;
+	if (ALife::is_invalid_object_id(ID)) return 0;
 	xrS_entities::iterator I = entities.find(ID);
 	if (entities.end() != I) return I->second;
 	else return 0;

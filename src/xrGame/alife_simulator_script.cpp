@@ -43,7 +43,7 @@ CALifeSimulator* alife()
 CSE_ALifeDynamicObject* alife_object(const CALifeSimulator* self, ALife::_OBJECT_ID object_id)
 {
 	VERIFY(self);
-	if (object_id == 0xffff)
+	if (ALife::is_invalid_object_id(object_id))
 	{
 		Msg("alife():object(id) ! invalid id specified");
 		return (0);
@@ -54,7 +54,7 @@ CSE_ALifeDynamicObject* alife_object(const CALifeSimulator* self, ALife::_OBJECT
 bool valid_object_id(const CALifeSimulator* self, ALife::_OBJECT_ID object_id)
 {
 	VERIFY(self);
-	return (object_id != 0xffff);
+	return (!ALife::is_invalid_object_id(object_id));
 }
 
 #ifdef DEBUG

@@ -316,7 +316,7 @@ void CObjectList::Update(bool bForce)
 void CObjectList::net_Register(CObject* O)
 {
 	R_ASSERT(O);
-	R_ASSERT(O->ID() != 65535 && O->ID() < 131072);
+	R_ASSERT(O->ID() != 65535 && O->ID() != 65534 && O->ID() < 131072);
 
 	map_NETID[O->ID()] = O;
 
@@ -327,8 +327,8 @@ void CObjectList::net_Register(CObject* O)
 
 void CObjectList::net_Unregister(CObject* O)
 {
-	// demo_spectator can have the invalid id 65535
-	if (O->ID() != 65535 && O->ID() < 131072)
+	// demo_spectator can have the invalid id 65535; 65534 is also reserved
+	if (O->ID() != 65535 && O->ID() != 65534 && O->ID() < 131072)
 		map_NETID[O->ID()] = NULL;
 	/*
 	 xr_map<u32,CObject*>::iterator it = map_NETID.find(O->ID());

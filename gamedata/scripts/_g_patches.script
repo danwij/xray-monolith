@@ -1163,7 +1163,7 @@ _G.get_object_by_id = function(id)
 		return db.actor
 	end
 
-	if id == 65535 then
+	if id == 65535 or id == 65534 then
 		return
 	end
 	

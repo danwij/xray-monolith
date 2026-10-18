@@ -39,11 +39,18 @@ namespace ALife
 {
 	typedef u64 _CLASS_ID; // Class ID
 	// Runtime object ids are wider than 16 bits. 65535 stays the invalid and parentless value
-	// scripts already compare against. Do not use _OBJECT_ID(-1): that is 0xFFFFFFFF.
+	// scripts already compare against. 65534 is also treated as empty by some Anomaly/GAMMA
+	// scripts, so it is reserved and never allocated. Do not use _OBJECT_ID(-1): that is 0xFFFFFFFF.
 	typedef u32 _OBJECT_ID;
 	const _OBJECT_ID invalid_object_id = 65535;
+	const _OBJECT_ID invalid_object_id_alt = 65534;
 	const _OBJECT_ID max_object_id = 131071;
 	const u32 object_id_count = 131072;
+
+	inline bool is_invalid_object_id(_OBJECT_ID id)
+	{
+		return id == invalid_object_id || id == invalid_object_id_alt;
+	}
 	typedef u64 _TIME_ID; // Time  ID
 	typedef u32 _EVENT_ID; // Event ID
 	typedef u32 _TASK_ID; // Event ID

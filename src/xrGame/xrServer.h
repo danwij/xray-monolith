@@ -142,7 +142,7 @@ private:
 	void _stdcall SendGameUpdateTo(IClient* client);
 private:
 	typedef
-	// 131072 addressable ids (0..131071). 65535 is reserved and is not allocated.
+	// 131072 addressable ids (0..131071). 65534 and 65535 are reserved and are not allocated.
 	// Block index is u16: id 65536 is block 256. Offset stays u8 (0..255).
 	// Count stays u16 because a full block holds 256 entries.
 	CID_Generator<
@@ -154,7 +154,8 @@ private:
 		0, // min value
 		ALife::max_object_id, // max value, inclusive
 		256, // block size
-		ALife::invalid_object_id // invalid id, kept for scripts
+		ALife::invalid_object_id, // invalid id, kept for scripts
+		ALife::invalid_object_id_alt // also empty in Anomaly/GAMMA scripts
 	> id_generator_type;
 
 private:

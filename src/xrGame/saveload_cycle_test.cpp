@@ -248,7 +248,10 @@ int run_saveload_cycle_tests()
 	Msg("* saveload_test start");
 
 	check(sizeof(ALife::_OBJECT_ID) == sizeof(u32), "object id type is 32-bit");
-	check(ALife::invalid_object_id == 65535 && ALife::max_object_id == 131071, "sentinel and max id");
+	check(ALife::invalid_object_id == 65535 && ALife::invalid_object_id_alt == 65534 &&
+		ALife::max_object_id == 131071, "sentinels and max id");
+	check(ALife::is_invalid_object_id(65534) && ALife::is_invalid_object_id(65535) &&
+		!ALife::is_invalid_object_id(65536), "both empty ids are rejected");
 
 	test_saved_object_id_lists();
 	test_update_and_event_headers();

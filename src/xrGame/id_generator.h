@@ -18,9 +18,15 @@ template <
 	VALUE_ID tMaxValue,
 	CHUNK_ID tBlockSize,
 	VALUE_ID tInvalidValueID = tMaxValue,
+	VALUE_ID tReservedValueID = tInvalidValueID,
 	TIME_ID tStartTime = 0>
 class CID_Generator
 {
+private:
+	IC static bool tfIsReserved(VALUE_ID tValueID)
+	{
+		return tValueID == tInvalidValueID || tValueID == tReservedValueID;
+	}
 private:
 	struct SID_Block
 	{
@@ -72,7 +78,7 @@ private:
 			// Block index times block size is wider than either factor. Keep the product in VALUE_ID.
 			const VALUE_ID id = VALUE_ID(l_tID_Block.m_tpIDs[--l_tID_Block.m_tCount])
 				+ VALUE_ID(l_tBlockID) * VALUE_ID(tBlockSize) + tMinValue;
-			VERIFY(id != tInvalidValueID);
+			VERIFY(!tfIsReserved(id));
 			return id;
 		}
 
@@ -90,10 +96,10 @@ public:
 		for (u32 block = 0; block < m_tBlockCount; ++block)
 			m_tppBlocks[block].m_tCount = 0;
 
-		// tInvalidValueID may sit inside [tMinValue, tMaxValue]. It is reserved and is not a free id.
+		// Reserved ids may sit inside [tMinValue, tMaxValue]. They are not free ids.
 		for (VALUE_ID i = tMinValue; ; ++i)
 		{
-			if (i != tInvalidValueID)
+			if (!tfIsReserved(i))
 				vfFreeID(i, tStartTime);
 			if (i >= tMaxValue)
 				break;
@@ -122,7 +128,7 @@ public:
 
 	IC void vfFreeID(VALUE_ID tValueID, TIME_ID tTimeID)
 	{
-		if (tValueID == tInvalidValueID)
+		if (tfIsReserved(tValueID))
 		{
 			R_ASSERT2(false, "Freeing an invalid ID is rejected");
 			return;

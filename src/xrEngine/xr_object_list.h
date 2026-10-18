@@ -9,7 +9,7 @@ class ENGINE_API CObjectList
 {
 private:
 	// data
-	// Indexed by object id. 65535 is the invalid id and is never stored.
+	// Indexed by object id. 65534 and 65535 are invalid ids and are never stored.
 	// 131072 entries cover ids 0..131071.
 	CObject* map_NETID[131072];
 

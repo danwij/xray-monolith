@@ -21,8 +21,8 @@
 #include "ai_space.h"
 #include "script_engine.h"
 
-// Scripts shipped with Anomaly and GAMMA treat every id >= 65535 as "no object".
-// 65535 stays the empty id. Ids above it are real objects and must still resolve.
+// Scripts shipped with Anomaly and GAMMA treat 65534 and every id >= 65535 as "no object".
+// 65535 stays the empty/parentless id. Ids above it are real objects and must still resolve.
 // The wrapper has to be installed again after a script reload replaces alife_object.
 static void allow_expanded_object_ids()
 {
@@ -51,8 +51,10 @@ static void allow_expanded_object_ids()
 	xr_sprintf(chunk,
 		"local max_id = %u\n"
 		"local invalid_id = %u\n"
+		"local invalid_id_alt = %u\n"
 		"local previous = alife_object\n"
 		"local function expanded(id)\n"
+		"  if type(id) == 'number' and (id == invalid_id or id == invalid_id_alt) then return nil end\n"
 		"  if type(id) == 'number' and id > invalid_id and id <= max_id then\n"
 		"    local sim = alife()\n"
 		"    if not sim then return nil end\n"
@@ -66,6 +68,7 @@ static void allow_expanded_object_ids()
 		"if get_object_by_id and rawget(_G, '__expanded_get_object_by_id') ~= get_object_by_id then\n"
 		"  local previous_get = get_object_by_id\n"
 		"  local function expanded_get(id)\n"
+		"    if type(id) == 'number' and (id == invalid_id or id == invalid_id_alt) then return nil end\n"
 		"    if type(id) == 'number' and id > invalid_id and id <= max_id then\n"
 		"      if AC_ID and id == AC_ID and db and db.actor then return db.actor end\n"
 		"      if gameobjects_registry and gameobjects_registry[id] then return gameobjects_registry[id] end\n"
@@ -79,7 +82,8 @@ static void allow_expanded_object_ids()
 		"  rawset(_G, '__expanded_get_object_by_id', expanded_get)\n"
 		"end\n",
 		(u32)ALife::max_object_id,
-		(u32)ALife::invalid_object_id);
+		(u32)ALife::invalid_object_id,
+		(u32)ALife::invalid_object_id_alt);
 
 	if (luaL_loadbuffer(L, chunk, xr_strlen(chunk), "@object_id_compat"))
 	{
